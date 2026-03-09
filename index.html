@@ -159,6 +159,22 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
 .stat-card .sv { font-family: var(--mono); font-size: .85rem; font-weight: 700; }
 .stat-card .sl { font-size: .55rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 
+/* Player chips */
+.player-chips {
+  display: flex; flex-wrap: wrap; gap: .3rem; padding: .5rem 2rem;
+  border-bottom: 1px solid var(--border);
+}
+.player-chips .chip-label { font-size: .6rem; color: var(--muted); font-weight: 600; text-transform: uppercase; margin-right: .3rem; align-self: center; }
+.player-chip {
+  font-family: var(--font); font-size: .6rem; font-weight: 500;
+  padding: .25rem .55rem; border-radius: 20px; cursor: pointer;
+  background: var(--surface2); color: var(--text2); border: 1px solid var(--border);
+  transition: all .12s; white-space: nowrap;
+}
+.player-chip:hover { border-color: var(--accent); color: var(--text1); }
+.player-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.player-chip .chip-min { font-family: var(--mono); font-size: .5rem; opacity: .7; margin-left: .2rem; }
+
 /* Error */
 .error-banner {
   display: none; padding: .75rem 2rem; background: rgba(239,68,68,.08);
@@ -246,7 +262,7 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
 
 <div class="proxy-config" id="proxyConfig" style="display:none">
   <span>CORS Proxy URL:</span>
-  <input id="proxyUrl" placeholder="https://your-proxy.workers.dev/?url=" value="">
+  <input id="proxyUrl" placeholder="https://your-proxy.workers.dev/?url=" value="https://nba-lineup-proxy.thejorgesierra.workers.dev/?url=">
   <span class="proxy-toggle" onclick="toggleProxy()">✕ Close</span>
 </div>
 <div style="padding:0 2rem;font-size:.55rem;color:var(--muted);padding-top:.3rem;display:flex;gap:.5rem;align-items:center">
@@ -263,6 +279,7 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
 
 <div id="resultsPanel" style="display:none">
   <div class="stats-bar" id="statsBar"></div>
+  <div class="player-chips" id="playerChips" style="display:none"></div>
   <div class="filter-bar">
     <input id="playerFilter" placeholder="Filter by player name..." oninput="applyFilters()">
     <div class="min-filter">
@@ -326,6 +343,7 @@ const TEAMS = [
 
 let rawData = null;
 let sortCol = null, sortAsc = false;
+let selectedPlayers = new Set(); // active player filters
 
 // Init dropdowns
 function init() {
@@ -478,7 +496,7 @@ function renderResults() {
   rawData._pmCols = PLUS_MINUS_COLS;
 
   // Stats summary
-  const gpIdx = colMap['GP'], minIdx = colMap['MIN'];
+  const gpIdx = colMap['GP'], minIdx = colMap['MIN'], nameIdx = colMap['GROUP_NAME'];
   const totalLineups = rows.length;
   const avgGP = rows.reduce((s, r) => s + (r[gpIdx] || 0), 0) / totalLineups;
   const statsBar = document.getElementById('statsBar');
@@ -490,9 +508,52 @@ function renderResults() {
   // Default sort by MIN descending
   sortCol = 'MIN';
   sortAsc = false;
+  selectedPlayers.clear();
+
+  // Extract unique player names and their total minutes
+  const playerMinutes = {};
+  for (const row of rows) {
+    const names = (row[nameIdx] || '').split(' - ');
+    const min = row[minIdx] || 0;
+    for (const n of names) {
+      const name = n.trim();
+      if (name) playerMinutes[name] = (playerMinutes[name] || 0) + min;
+    }
+  }
+  // Sort by total minutes
+  const sortedPlayers = Object.entries(playerMinutes).sort((a, b) => b[1] - a[1]);
+
+  // Render chips
+  const chipsEl = document.getElementById('playerChips');
+  let chipHtml = '<span class="chip-label">Players:</span>';
+  for (const [name, min] of sortedPlayers) {
+    const minLabel = min >= 1000 ? `${(min/60).toFixed(0)}h` : `${Math.round(min)}m`;
+    chipHtml += `<span class="player-chip" data-player="${name}" onclick="togglePlayerChip(this)">${name}<span class="chip-min">${minLabel}</span></span>`;
+  }
+  chipHtml += `<span class="player-chip" style="background:none;border-style:dashed;color:var(--muted)" onclick="clearPlayerChips()">Clear all</span>`;
+  chipsEl.innerHTML = chipHtml;
+  chipsEl.style.display = 'flex';
 
   document.getElementById('resultsPanel').style.display = 'block';
   document.getElementById('emptyState').style.display = 'none';
+  applyFilters();
+}
+
+function togglePlayerChip(el) {
+  const name = el.dataset.player;
+  if (selectedPlayers.has(name)) {
+    selectedPlayers.delete(name);
+    el.classList.remove('active');
+  } else {
+    selectedPlayers.add(name);
+    el.classList.add('active');
+  }
+  applyFilters();
+}
+
+function clearPlayerChips() {
+  selectedPlayers.clear();
+  document.querySelectorAll('.player-chip.active').forEach(el => el.classList.remove('active'));
   applyFilters();
 }
 
@@ -510,6 +571,13 @@ function applyFilters() {
     if (r[gpIdx] < minGP) return false;
     if (r[minIdx] < minMIN) return false;
     if (playerFilter && !(r[nameIdx] || '').toLowerCase().includes(playerFilter)) return false;
+    // Player chip filter: lineup must contain ALL selected players
+    if (selectedPlayers.size > 0) {
+      const lineupNames = (r[nameIdx] || '').split(' - ').map(n => n.trim());
+      for (const sp of selectedPlayers) {
+        if (!lineupNames.includes(sp)) return false;
+      }
+    }
     return true;
   });
 
