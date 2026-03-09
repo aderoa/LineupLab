@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lineup Lab — HoopsMatic</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0c0f14;
+  --surface: #141820;
+  --surface2: #1a1f2b;
+  --border: #252b38;
+  --text1: #e8eaed;
+  --text2: #9aa0ad;
+  --muted: #5e6577;
+  --accent: #3b82f6;
+  --green: #22c55e;
+  --red: #ef4444;
+  --orange: #f59e0b;
+  --cyan: #06b6d4;
+  --purple: #a78bfa;
+  --font: 'DM Sans', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--text1); min-height: 100vh; }
+
+/* Header */
+.header {
+  background: linear-gradient(135deg, #1a1f2b 0%, #0c0f14 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 1.25rem 2rem;
+  display: flex; align-items: center; gap: 1rem;
+}
+.header .logo { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; }
+.header .logo span { color: var(--accent); }
+.header .badge { font-size: .6rem; padding: .2rem .5rem; background: rgba(59,130,246,.15); color: var(--accent); border-radius: 4px; font-weight: 600; }
+.header .sub { font-size: .7rem; color: var(--muted); margin-left: auto; }
+
+/* Controls */
+.controls {
+  padding: 1.25rem 2rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end;
+}
+.ctrl-group { display: flex; flex-direction: column; gap: .3rem; }
+.ctrl-group label { font-size: .6rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.ctrl-group select, .ctrl-group input {
+  font-family: var(--font); font-size: .75rem; padding: .45rem .6rem;
+  background: var(--surface2); color: var(--text1); border: 1px solid var(--border);
+  border-radius: 6px; outline: none; min-width: 140px;
+}
+.ctrl-group select:focus, .ctrl-group input:focus { border-color: var(--accent); }
+.btn {
+  font-family: var(--font); font-size: .75rem; font-weight: 600;
+  padding: .5rem 1.2rem; border: none; border-radius: 6px; cursor: pointer;
+  transition: all .15s;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #2563eb; }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+.btn-outline { background: none; border: 1px solid var(--border); color: var(--text2); }
+.btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Tabs */
+.tab-bar {
+  display: flex; gap: 0; border-bottom: 1px solid var(--border);
+  padding: 0 2rem; background: var(--surface);
+}
+.tab {
+  padding: .65rem 1.2rem; font-size: .7rem; font-weight: 600; color: var(--muted);
+  cursor: pointer; border-bottom: 2px solid transparent; transition: all .15s;
+}
+.tab:hover { color: var(--text2); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Filter bar */
+.filter-bar {
+  padding: .75rem 2rem;
+  display: flex; gap: .75rem; align-items: center; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+.filter-bar input {
+  font-family: var(--font); font-size: .75rem; padding: .4rem .6rem;
+  background: var(--surface2); color: var(--text1); border: 1px solid var(--border);
+  border-radius: 6px; outline: none; width: 220px;
+}
+.filter-bar input:focus { border-color: var(--accent); }
+.filter-bar .stat-label { font-size: .6rem; color: var(--muted); }
+.min-filter { display: flex; align-items: center; gap: .3rem; }
+.min-filter input { width: 60px; text-align: center; }
+
+/* Table */
+.table-wrap {
+  overflow-x: auto; padding: 0 2rem 2rem;
+}
+table {
+  width: 100%; border-collapse: collapse; font-size: .7rem;
+  margin-top: 1rem;
+}
+thead th {
+  padding: .5rem .4rem; text-align: left; font-weight: 600; font-size: .6rem;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
+  border-bottom: 2px solid var(--border); cursor: pointer; user-select: none;
+  white-space: nowrap; position: sticky; top: 0; background: var(--bg); z-index: 2;
+}
+thead th:hover { color: var(--accent); }
+thead th.sorted { color: var(--accent); }
+thead th.sorted::after { content: ' ▼'; font-size: .5rem; }
+thead th.sorted.asc::after { content: ' ▲'; }
+tbody td {
+  padding: .45rem .4rem; border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody tr:hover { background: rgba(59,130,246,.04); }
+.lineup-name { font-weight: 600; font-size: .72rem; min-width: 200px; }
+.num { font-family: var(--mono); font-size: .65rem; text-align: right; }
+.num.pos { color: var(--green); }
+.num.neg { color: var(--red); }
+.num.neutral { color: var(--text2); }
+
+/* Badges */
+.team-badge {
+  display: inline-flex; align-items: center; gap: .3rem;
+  font-size: .6rem; padding: .15rem .4rem; border-radius: 4px;
+  background: var(--surface2); color: var(--text2);
+}
+
+/* Loading */
+.loading-overlay {
+  display: none; padding: 3rem 2rem; text-align: center;
+}
+.spinner {
+  display: inline-block; width: 28px; height: 28px;
+  border: 3px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: .75rem; color: var(--muted); margin-top: .5rem; }
+
+/* Empty state */
+.empty-state {
+  padding: 4rem 2rem; text-align: center; color: var(--muted);
+}
+.empty-state .icon { font-size: 2rem; margin-bottom: .5rem; opacity: .4; }
+.empty-state .msg { font-size: .8rem; }
+.empty-state .hint { font-size: .65rem; margin-top: .3rem; color: var(--muted); opacity: .7; }
+
+/* Stats bar */
+.stats-bar {
+  display: flex; gap: 1.5rem; padding: .75rem 2rem;
+  border-bottom: 1px solid var(--border);
+}
+.stat-card {
+  display: flex; flex-direction: column;
+}
+.stat-card .sv { font-family: var(--mono); font-size: .85rem; font-weight: 700; }
+.stat-card .sl { font-size: .55rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+/* Error */
+.error-banner {
+  display: none; padding: .75rem 2rem; background: rgba(239,68,68,.08);
+  border-bottom: 1px solid rgba(239,68,68,.2); color: var(--red); font-size: .7rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .header { padding: .75rem 1rem; }
+  .controls { padding: .75rem 1rem; }
+  .table-wrap { padding: 0 .5rem 1rem; }
+  .filter-bar { padding: .5rem 1rem; }
+  .stats-bar { padding: .5rem 1rem; flex-wrap: wrap; gap: .75rem; }
+}
+
+/* Proxy config */
+.proxy-config {
+  padding: .5rem 2rem; font-size: .6rem; color: var(--muted);
+  border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: .5rem;
+}
+.proxy-config input {
+  font-family: var(--mono); font-size: .6rem; padding: .25rem .4rem;
+  background: var(--surface2); color: var(--text1); border: 1px solid var(--border);
+  border-radius: 4px; outline: none; flex: 1; max-width: 400px;
+}
+.proxy-toggle { cursor: pointer; color: var(--accent); font-size: .6rem; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">🏀 Lineup <span>Lab</span></div>
+  <div class="badge">BETA</div>
+  <div class="sub">HoopsMatic · NBA Two-Man Lineup Analytics</div>
+</div>
+
+<div class="controls">
+  <div class="ctrl-group">
+    <label>Team</label>
+    <select id="teamSelect"></select>
+  </div>
+  <div class="ctrl-group">
+    <label>Season</label>
+    <select id="seasonSelect"></select>
+  </div>
+  <div class="ctrl-group">
+    <label>Lineup Size</label>
+    <select id="groupSelect">
+      <option value="2" selected>2-Man</option>
+      <option value="3">3-Man</option>
+      <option value="4">4-Man</option>
+      <option value="5">5-Man</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Stats Type</label>
+    <select id="measureSelect">
+      <option value="Advanced" selected>Advanced</option>
+      <option value="Base">Base</option>
+      <option value="Scoring">Scoring</option>
+      <option value="Four Factors">Four Factors</option>
+      <option value="Misc">Misc</option>
+      <option value="Opponent">Opponent</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Per Mode</label>
+    <select id="perModeSelect">
+      <option value="PerGame">Per Game</option>
+      <option value="Totals">Totals</option>
+      <option value="Per100Possessions">Per 100 Poss</option>
+      <option value="Per48">Per 48</option>
+      <option value="Per36">Per 36</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Season Type</label>
+    <select id="seasonTypeSelect">
+      <option value="Regular Season" selected>Regular Season</option>
+      <option value="Playoffs">Playoffs</option>
+    </select>
+  </div>
+  <button class="btn btn-primary" id="fetchBtn" onclick="fetchLineups()">Fetch Lineups</button>
+</div>
+
+<div class="proxy-config" id="proxyConfig" style="display:none">
+  <span>CORS Proxy URL:</span>
+  <input id="proxyUrl" placeholder="https://your-proxy.workers.dev/?url=" value="">
+  <span class="proxy-toggle" onclick="toggleProxy()">✕ Close</span>
+</div>
+<div style="padding:0 2rem;font-size:.55rem;color:var(--muted);padding-top:.3rem;display:flex;gap:.5rem;align-items:center">
+  <span class="proxy-toggle" onclick="toggleProxy()">⚙️ Proxy Settings</span>
+  <span>·</span>
+  <span>Data from stats.nba.com · A CORS proxy may be needed</span>
+</div>
+
+<div class="error-banner" id="errorBanner"></div>
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">Fetching lineup data from NBA Stats...</div>
+</div>
+
+<div id="resultsPanel" style="display:none">
+  <div class="stats-bar" id="statsBar"></div>
+  <div class="filter-bar">
+    <input id="playerFilter" placeholder="Filter by player name..." oninput="applyFilters()">
+    <div class="min-filter">
+      <span class="stat-label">Min GP:</span>
+      <input id="minGP" type="number" value="5" oninput="applyFilters()">
+    </div>
+    <div class="min-filter">
+      <span class="stat-label">Min MIN:</span>
+      <input id="minMIN" type="number" value="20" oninput="applyFilters()">
+    </div>
+    <span class="stat-label" id="resultCount"></span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead id="thead"></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="empty-state" id="emptyState">
+  <div class="icon">📊</div>
+  <div class="msg">Select a team and fetch lineup data</div>
+  <div class="hint">Two-man lineups show how every pair of players performs together</div>
+</div>
+
+<script>
+// NBA Teams
+const TEAMS = [
+  {id:'1610612737',name:'Atlanta Hawks',abbr:'ATL'},
+  {id:'1610612738',name:'Boston Celtics',abbr:'BOS'},
+  {id:'1610612751',name:'Brooklyn Nets',abbr:'BKN'},
+  {id:'1610612766',name:'Charlotte Hornets',abbr:'CHA'},
+  {id:'1610612741',name:'Chicago Bulls',abbr:'CHI'},
+  {id:'1610612739',name:'Cleveland Cavaliers',abbr:'CLE'},
+  {id:'1610612742',name:'Dallas Mavericks',abbr:'DAL'},
+  {id:'1610612743',name:'Denver Nuggets',abbr:'DEN'},
+  {id:'1610612765',name:'Detroit Pistons',abbr:'DET'},
+  {id:'1610612744',name:'Golden State Warriors',abbr:'GSW'},
+  {id:'1610612745',name:'Houston Rockets',abbr:'HOU'},
+  {id:'1610612754',name:'Indiana Pacers',abbr:'IND'},
+  {id:'1610612746',name:'LA Clippers',abbr:'LAC'},
+  {id:'1610612747',name:'Los Angeles Lakers',abbr:'LAL'},
+  {id:'1610612763',name:'Memphis Grizzlies',abbr:'MEM'},
+  {id:'1610612748',name:'Miami Heat',abbr:'MIA'},
+  {id:'1610612749',name:'Milwaukee Bucks',abbr:'MIL'},
+  {id:'1610612750',name:'Minnesota Timberwolves',abbr:'MIN'},
+  {id:'1610612740',name:'New Orleans Pelicans',abbr:'NOP'},
+  {id:'1610612752',name:'New York Knicks',abbr:'NYK'},
+  {id:'1610612760',name:'Oklahoma City Thunder',abbr:'OKC'},
+  {id:'1610612753',name:'Orlando Magic',abbr:'ORL'},
+  {id:'1610612755',name:'Philadelphia 76ers',abbr:'PHI'},
+  {id:'1610612756',name:'Phoenix Suns',abbr:'PHX'},
+  {id:'1610612757',name:'Portland Trail Blazers',abbr:'POR'},
+  {id:'1610612758',name:'Sacramento Kings',abbr:'SAC'},
+  {id:'1610612759',name:'San Antonio Spurs',abbr:'SAS'},
+  {id:'1610612761',name:'Toronto Raptors',abbr:'TOR'},
+  {id:'1610612762',name:'Utah Jazz',abbr:'UTA'},
+  {id:'1610612764',name:'Washington Wizards',abbr:'WAS'}
+];
+
+let rawData = null;
+let sortCol = null, sortAsc = false;
+
+// Init dropdowns
+function init() {
+  const teamSel = document.getElementById('teamSelect');
+  teamSel.innerHTML = TEAMS.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+
+  const seasonSel = document.getElementById('seasonSelect');
+  const currentYear = new Date().getFullYear();
+  let seasons = [];
+  for (let y = currentYear; y >= 2015; y--) {
+    const s = `${y-1}-${String(y).slice(2)}`;
+    seasons.push(`<option value="${s}">${s}</option>`);
+  }
+  seasonSel.innerHTML = seasons.join('');
+}
+
+function toggleProxy() {
+  const el = document.getElementById('proxyConfig');
+  el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+}
+
+async function fetchLineups() {
+  const teamId = document.getElementById('teamSelect').value;
+  const season = document.getElementById('seasonSelect').value;
+  const groupQty = document.getElementById('groupSelect').value;
+  const measure = document.getElementById('measureSelect').value;
+  const perMode = document.getElementById('perModeSelect').value;
+  const seasonType = document.getElementById('seasonTypeSelect').value;
+  const proxy = document.getElementById('proxyUrl').value.trim();
+
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('resultsPanel').style.display = 'none';
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('errorBanner').style.display = 'none';
+  document.getElementById('fetchBtn').disabled = true;
+
+  const params = new URLSearchParams({
+    DateFrom: '', DateTo: '', GameID: '', GameSegment: '',
+    GroupQuantity: groupQty, LastNGames: 0, LeagueID: '00',
+    Location: '', MeasureType: measure, Month: 0,
+    OpponentTeamID: 0, Outcome: '', PORound: '',
+    PaceAdjust: 'N', PerMode: perMode, Period: 0,
+    PlusMinus: 'N', Rank: 'N', Season: season,
+    SeasonSegment: '', SeasonType: seasonType,
+    ShotClockRange: '', TeamID: teamId,
+    VsConference: '', VsDivision: ''
+  });
+
+  const baseUrl = `https://stats.nba.com/stats/teamdashlineups?${params}`;
+  const fetchUrl = proxy ? `${proxy}${encodeURIComponent(baseUrl)}` : baseUrl;
+
+  try {
+    const resp = await fetch(fetchUrl, {
+      headers: {
+        'Accept': 'application/json',
+        'Referer': 'https://www.nba.com/',
+        'x-nba-stats-origin': 'stats',
+        'x-nba-stats-token': 'true'
+      }
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const json = await resp.json();
+
+    // Parse response
+    const lineupSet = json.resultSets.find(rs => rs.name === 'Lineups');
+    if (!lineupSet || !lineupSet.rowSet.length) {
+      throw new Error('No lineup data returned. Try a different season or team.');
+    }
+
+    rawData = {
+      headers: lineupSet.headers,
+      rows: lineupSet.rowSet,
+      team: TEAMS.find(t => t.id === teamId),
+      season, groupQty, measure, perMode, seasonType
+    };
+
+    renderResults();
+  } catch (err) {
+    console.error(err);
+    const banner = document.getElementById('errorBanner');
+    if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('CORS')) {
+      banner.innerHTML = `<strong>CORS Error:</strong> stats.nba.com blocks direct browser requests. Click ⚙️ Proxy Settings above and add a CORS proxy URL (e.g., a Cloudflare Worker). <a href="javascript:toggleProxy()" style="color:var(--accent)">Open proxy settings →</a>`;
+    } else {
+      banner.textContent = `Error: ${err.message}`;
+    }
+    banner.style.display = 'block';
+    document.getElementById('emptyState').style.display = 'block';
+  } finally {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('fetchBtn').disabled = false;
+  }
+}
+
+function renderResults() {
+  if (!rawData) return;
+
+  const { headers, rows, team, season, groupQty, measure } = rawData;
+
+  // Build column config based on measure type
+  const colMap = {};
+  headers.forEach((h, i) => colMap[h] = i);
+
+  // Define which columns to show
+  const ADVANCED_COLS = ['GROUP_NAME','GP','W','L','W_PCT','MIN','OFF_RATING','DEF_RATING','NET_RATING','AST_PCT','AST_TO','AST_RATIO','OREB_PCT','DREB_PCT','REB_PCT','EFG_PCT','TS_PCT','PACE','PIE'];
+  const BASE_COLS = ['GROUP_NAME','GP','W','L','W_PCT','MIN','FGM','FGA','FG_PCT','FG3M','FG3A','FG3_PCT','FTM','FTA','FT_PCT','OREB','DREB','REB','AST','TOV','STL','BLK','PTS','PLUS_MINUS'];
+  const SCORING_COLS = ['GROUP_NAME','GP','W','L','MIN','PCT_FGA_2PT','PCT_FGA_3PT','PCT_PTS_2PT','PCT_PTS_2PT_MR','PCT_PTS_3PT','PCT_PTS_FB','PCT_PTS_FT','PCT_PTS_OFF_TOV','PCT_PTS_PAINT','PCT_AST_2PM','PCT_AST_3PM','PCT_AST_FGM'];
+  const FF_COLS = ['GROUP_NAME','GP','W','L','MIN','EFG_PCT','FTA_RATE','TM_TOV_PCT','OREB_PCT','OPP_EFG_PCT','OPP_FTA_RATE','OPP_TOV_PCT','OPP_OREB_PCT'];
+  const MISC_COLS = ['GROUP_NAME','GP','W','L','MIN','PTS_OFF_TOV','PTS_2ND_CHANCE','PTS_FB','PTS_PAINT','OPP_PTS_OFF_TOV','OPP_PTS_2ND_CHANCE','OPP_PTS_FB','OPP_PTS_PAINT'];
+
+  let showCols;
+  if (measure === 'Advanced') showCols = ADVANCED_COLS;
+  else if (measure === 'Scoring') showCols = SCORING_COLS;
+  else if (measure === 'Four Factors') showCols = FF_COLS;
+  else if (measure === 'Misc') showCols = MISC_COLS;
+  else showCols = BASE_COLS;
+
+  // Filter to columns that actually exist in data
+  const cols = showCols.filter(c => colMap[c] !== undefined);
+
+  // Column display names
+  const LABELS = {
+    GROUP_NAME: 'Lineup', GP: 'GP', W: 'W', L: 'L', W_PCT: 'W%', MIN: 'MIN',
+    OFF_RATING: 'ORTG', DEF_RATING: 'DRTG', NET_RATING: 'NET', AST_PCT: 'AST%',
+    AST_TO: 'AST/TO', AST_RATIO: 'AST Ratio', OREB_PCT: 'OREB%', DREB_PCT: 'DREB%',
+    REB_PCT: 'REB%', EFG_PCT: 'eFG%', TS_PCT: 'TS%', PACE: 'PACE', PIE: 'PIE',
+    FGM: 'FGM', FGA: 'FGA', FG_PCT: 'FG%', FG3M: '3PM', FG3A: '3PA', FG3_PCT: '3P%',
+    FTM: 'FTM', FTA: 'FTA', FT_PCT: 'FT%', OREB: 'OREB', DREB: 'DREB', REB: 'REB',
+    AST: 'AST', TOV: 'TOV', STL: 'STL', BLK: 'BLK', PTS: 'PTS', PLUS_MINUS: '+/-',
+    PTS_OFF_TOV: 'PTS off TO', PTS_2ND_CHANCE: '2nd Ch', PTS_FB: 'Fast Brk', PTS_PAINT: 'Paint',
+    OPP_PTS_OFF_TOV: 'Opp TO', OPP_PTS_2ND_CHANCE: 'Opp 2nd', OPP_PTS_FB: 'Opp FB', OPP_PTS_PAINT: 'Opp Paint',
+    TM_TOV_PCT: 'TOV%', FTA_RATE: 'FTA Rate', OPP_EFG_PCT: 'Opp eFG%', OPP_FTA_RATE: 'Opp FTA Rate',
+    OPP_TOV_PCT: 'Opp TOV%', OPP_OREB_PCT: 'Opp OREB%',
+    PCT_FGA_2PT: '%FGA 2P', PCT_FGA_3PT: '%FGA 3P', PCT_PTS_2PT: '%PTS 2P',
+    PCT_PTS_2PT_MR: '%PTS MR', PCT_PTS_3PT: '%PTS 3P', PCT_PTS_FB: '%PTS FB',
+    PCT_PTS_FT: '%PTS FT', PCT_PTS_OFF_TOV: '%PTS TO', PCT_PTS_PAINT: '%PTS Paint',
+    PCT_AST_2PM: '%AST 2P', PCT_AST_3PM: '%AST 3P', PCT_AST_FGM: '%AST FG'
+  };
+
+  // Percentage columns (multiply by 100 for display)
+  const PCT_COLS = new Set(['W_PCT','FG_PCT','FG3_PCT','FT_PCT','EFG_PCT','TS_PCT','AST_PCT','OREB_PCT','DREB_PCT','REB_PCT','PIE',
+    'OPP_EFG_PCT','OPP_FTA_RATE','OPP_TOV_PCT','OPP_OREB_PCT','FTA_RATE','TM_TOV_PCT',
+    'PCT_FGA_2PT','PCT_FGA_3PT','PCT_PTS_2PT','PCT_PTS_2PT_MR','PCT_PTS_3PT','PCT_PTS_FB','PCT_PTS_FT','PCT_PTS_OFF_TOV','PCT_PTS_PAINT','PCT_AST_2PM','PCT_AST_3PM','PCT_AST_FGM']);
+  const PLUS_MINUS_COLS = new Set(['PLUS_MINUS','NET_RATING']);
+
+  // Store for filtering/sorting
+  rawData._cols = cols;
+  rawData._colMap = colMap;
+  rawData._labels = LABELS;
+  rawData._pctCols = PCT_COLS;
+  rawData._pmCols = PLUS_MINUS_COLS;
+
+  // Stats summary
+  const gpIdx = colMap['GP'], minIdx = colMap['MIN'];
+  const totalLineups = rows.length;
+  const avgGP = rows.reduce((s, r) => s + (r[gpIdx] || 0), 0) / totalLineups;
+  const statsBar = document.getElementById('statsBar');
+  statsBar.innerHTML = `
+    <div class="stat-card"><span class="sv">${team.name}</span><span class="sl">${season} · ${groupQty}-Man · ${measure}</span></div>
+    <div class="stat-card"><span class="sv">${totalLineups}</span><span class="sl">Total Lineups</span></div>
+  `;
+
+  // Default sort by MIN descending
+  sortCol = 'MIN';
+  sortAsc = false;
+
+  document.getElementById('resultsPanel').style.display = 'block';
+  document.getElementById('emptyState').style.display = 'none';
+  applyFilters();
+}
+
+function applyFilters() {
+  if (!rawData) return;
+  const { headers, rows, _cols: cols, _colMap: colMap, _labels: LABELS, _pctCols: PCT_COLS, _pmCols: PLUS_MINUS_COLS } = rawData;
+
+  const playerFilter = (document.getElementById('playerFilter').value || '').toLowerCase();
+  const minGP = parseInt(document.getElementById('minGP').value) || 0;
+  const minMIN = parseInt(document.getElementById('minMIN').value) || 0;
+
+  const gpIdx = colMap['GP'], minIdx = colMap['MIN'], nameIdx = colMap['GROUP_NAME'];
+
+  let filtered = rows.filter(r => {
+    if (r[gpIdx] < minGP) return false;
+    if (r[minIdx] < minMIN) return false;
+    if (playerFilter && !(r[nameIdx] || '').toLowerCase().includes(playerFilter)) return false;
+    return true;
+  });
+
+  // Sort
+  if (sortCol && colMap[sortCol] !== undefined) {
+    const si = colMap[sortCol];
+    filtered.sort((a, b) => {
+      let va = a[si], vb = b[si];
+      if (typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+      return sortAsc ? (va - vb) : (vb - va);
+    });
+  }
+
+  // Render header
+  const thead = document.getElementById('thead');
+  thead.innerHTML = '<tr>' + cols.map(c => {
+    const cls = c === sortCol ? (sortAsc ? 'sorted asc' : 'sorted') : '';
+    return `<th class="${cls}" onclick="doSort('${c}')">${LABELS[c] || c}</th>`;
+  }).join('') + '</tr>';
+
+  // Render body
+  const tbody = document.getElementById('tbody');
+  let html = '';
+  for (const row of filtered) {
+    html += '<tr>';
+    for (const c of cols) {
+      const val = row[colMap[c]];
+      if (c === 'GROUP_NAME') {
+        // Format lineup names nicely
+        const names = (val || '').split(' - ');
+        html += `<td class="lineup-name">${names.join(' · ')}</td>`;
+      } else if (PCT_COLS.has(c)) {
+        const pct = val != null ? (val * 100).toFixed(1) : '—';
+        html += `<td class="num">${pct}%</td>`;
+      } else if (PLUS_MINUS_COLS.has(c)) {
+        const v = val != null ? val.toFixed(1) : '—';
+        const cls = val > 0 ? 'pos' : val < 0 ? 'neg' : 'neutral';
+        html += `<td class="num ${cls}">${val > 0 ? '+' : ''}${v}</td>`;
+      } else if (typeof val === 'number') {
+        html += `<td class="num">${Number.isInteger(val) ? val : val.toFixed(1)}</td>`;
+      } else {
+        html += `<td>${val ?? '—'}</td>`;
+      }
+    }
+    html += '</tr>';
+  }
+  tbody.innerHTML = html;
+
+  document.getElementById('resultCount').textContent = `${filtered.length} of ${rows.length} lineups`;
+}
+
+function doSort(col) {
+  if (sortCol === col) sortAsc = !sortAsc;
+  else { sortCol = col; sortAsc = false; }
+  applyFilters();
+}
+
+init();
+</script>
+</body>
+</html>
