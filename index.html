@@ -207,7 +207,7 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
 
 <div class="header">
   <div class="logo">🏀 Lineup <span>Lab</span></div>
-  <div class="badge">v1.2</div>
+  <div class="badge">v1.3</div>
   <div class="sub">HoopsMatic · NBA Two-Man Lineup Analytics</div>
 </div>
 
@@ -361,7 +361,7 @@ function init() {
   const seasonSel = document.getElementById('seasonSelect');
   const currentYear = new Date().getFullYear();
   let seasons = [];
-  for (let y = currentYear; y >= 2015; y--) {
+  for (let y = currentYear; y >= 2008; y--) {
     const s = `${y-1}-${String(y).slice(2)}`;
     seasons.push(`<option value="${s}">${s}</option>`);
   }
