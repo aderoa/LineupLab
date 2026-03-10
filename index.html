@@ -207,7 +207,7 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
 
 <div class="header">
   <div class="logo">🏀 Lineup <span>Lab</span></div>
-  <div class="badge">v1.1</div>
+  <div class="badge">v1.2</div>
   <div class="sub">HoopsMatic · NBA Two-Man Lineup Analytics</div>
 </div>
 
@@ -257,6 +257,12 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
       <option value="Playoffs">Playoffs</option>
     </select>
   </div>
+  <div class="ctrl-group">
+    <label>Player Filter</label>
+    <select id="playerSelect" style="min-width:160px" onchange="if(rawData)applyFilters()">
+      <option value="">All Players</option>
+    </select>
+  </div>
   <button class="btn btn-primary" id="fetchBtn" onclick="fetchLineups()">Fetch Lineups</button>
 </div>
 
@@ -274,7 +280,7 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
 <div class="error-banner" id="errorBanner"></div>
 <div class="loading-overlay" id="loading">
   <div class="spinner"></div>
-  <div class="loading-text">Fetching lineup data from NBA Stats...</div>
+  <div class="loading-text">Fetching lineup data from NBA Stats...<br><span style="font-size:.6rem;opacity:.6">This can take 15-30 seconds</span></div>
 </div>
 
 <div id="resultsPanel" style="display:none">
@@ -343,12 +349,14 @@ const TEAMS = [
 
 let rawData = null;
 let sortCol = null, sortAsc = false;
-let selectedPlayers = new Set(); // active player filters
+let selectedPlayers = new Set(); // active player chip filters
+let rosterCache = {}; // teamId_season → player list
 
 // Init dropdowns
 function init() {
   const teamSel = document.getElementById('teamSelect');
   teamSel.innerHTML = TEAMS.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  teamSel.addEventListener('change', () => loadRoster());
 
   const seasonSel = document.getElementById('seasonSelect');
   const currentYear = new Date().getFullYear();
@@ -358,6 +366,67 @@ function init() {
     seasons.push(`<option value="${s}">${s}</option>`);
   }
   seasonSel.innerHTML = seasons.join('');
+  seasonSel.addEventListener('change', () => loadRoster());
+
+  // Auto-load roster on init
+  setTimeout(() => loadRoster(), 200);
+}
+
+async function loadRoster() {
+  const teamId = document.getElementById('teamSelect').value;
+  const season = document.getElementById('seasonSelect').value;
+  const proxy = document.getElementById('proxyUrl').value.trim();
+  const cacheKey = `${teamId}_${season}`;
+
+  if (rosterCache[cacheKey]) {
+    populatePlayerDropdown(rosterCache[cacheKey]);
+    return;
+  }
+
+  const playerSel = document.getElementById('playerSelect');
+  playerSel.innerHTML = '<option value="">Loading roster...</option>';
+  playerSel.disabled = true;
+
+  const params = new URLSearchParams({
+    LeagueID: '00', Season: season, TeamID: teamId
+  });
+  const baseUrl = `https://stats.nba.com/stats/commonteamroster?${params}`;
+  const fetchUrl = proxy ? `${proxy}${encodeURIComponent(baseUrl)}` : baseUrl;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    const resp = await fetch(fetchUrl, {
+      signal: controller.signal,
+      headers: { 'Accept': 'application/json' }
+    });
+    clearTimeout(timeout);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const json = await resp.json();
+
+    const rosterSet = json.resultSets.find(rs => rs.name === 'CommonTeamRoster');
+    if (!rosterSet) throw new Error('No roster data');
+
+    const nameIdx = rosterSet.headers.indexOf('PLAYER');
+    const idIdx = rosterSet.headers.indexOf('PLAYER_ID');
+    const players = rosterSet.rowSet
+      .map(r => ({ name: r[nameIdx], id: String(r[idIdx]) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    rosterCache[cacheKey] = players;
+    populatePlayerDropdown(players);
+  } catch (err) {
+    console.warn('Roster load failed:', err.message);
+    playerSel.innerHTML = '<option value="">All Players</option>';
+    playerSel.disabled = false;
+  }
+}
+
+function populatePlayerDropdown(players) {
+  const playerSel = document.getElementById('playerSelect');
+  playerSel.innerHTML = '<option value="">All Players</option>' +
+    players.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+  playerSel.disabled = false;
 }
 
 function toggleProxy() {
@@ -397,7 +466,7 @@ async function fetchLineups() {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const timeout = setTimeout(() => controller.abort(), 60000);
     const resp = await fetch(fetchUrl, {
       signal: controller.signal,
       headers: { 'Accept': 'application/json' }
@@ -571,6 +640,7 @@ function applyFilters() {
   const { headers, rows, _cols: cols, _colMap: colMap, _labels: LABELS, _pctCols: PCT_COLS, _pmCols: PLUS_MINUS_COLS } = rawData;
 
   const playerFilter = (document.getElementById('playerFilter').value || '').toLowerCase();
+  const playerDropdown = document.getElementById('playerSelect').value;
   const minGP = parseInt(document.getElementById('minGP').value) || 0;
   const minMIN = parseInt(document.getElementById('minMIN').value) || 0;
 
@@ -580,6 +650,8 @@ function applyFilters() {
     if (r[gpIdx] < minGP) return false;
     if (r[minIdx] < minMIN) return false;
     if (playerFilter && !(r[nameIdx] || '').toLowerCase().includes(playerFilter)) return false;
+    // Top-level player dropdown filter
+    if (playerDropdown && !(r[nameIdx] || '').includes(playerDropdown)) return false;
     // Player chip filter: lineup must contain ALL selected players
     if (selectedPlayers.size > 0) {
       const lineupNames = (r[nameIdx] || '').split(' - ').map(n => n.trim());
