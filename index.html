@@ -207,7 +207,7 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
 
 <div class="header">
   <div class="logo">🏀 Lineup <span>Lab</span></div>
-  <div class="badge">BETA</div>
+  <div class="badge">v1.1</div>
   <div class="sub">HoopsMatic · NBA Two-Man Lineup Analytics</div>
 </div>
 
@@ -265,10 +265,10 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
   <input id="proxyUrl" placeholder="https://your-proxy.workers.dev/?url=" value="https://nba-lineup-proxy.thejorgesierra.workers.dev/?url=">
   <span class="proxy-toggle" onclick="toggleProxy()">✕ Close</span>
 </div>
-<div style="padding:0 2rem;font-size:.55rem;color:var(--muted);padding-top:.3rem;display:flex;gap:.5rem;align-items:center">
-  <span class="proxy-toggle" onclick="toggleProxy()">⚙️ Proxy Settings</span>
+<div style="padding:.25rem 2rem;font-size:.55rem;color:var(--muted);display:flex;gap:.5rem;align-items:center">
+  <span>Data from stats.nba.com</span>
   <span>·</span>
-  <span>Data from stats.nba.com · A CORS proxy may be needed</span>
+  <span class="proxy-toggle" onclick="toggleProxy()">⚙️ Proxy Settings</span>
 </div>
 
 <div class="error-banner" id="errorBanner"></div>
@@ -396,15 +396,20 @@ async function fetchLineups() {
   const fetchUrl = proxy ? `${proxy}${encodeURIComponent(baseUrl)}` : baseUrl;
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
     const resp = await fetch(fetchUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'Referer': 'https://www.nba.com/',
-        'x-nba-stats-origin': 'stats',
-        'x-nba-stats-token': 'true'
-      }
+      signal: controller.signal,
+      headers: { 'Accept': 'application/json' }
     });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    clearTimeout(timeout);
+    if (!resp.ok) {
+      let errBody = '';
+      try { errBody = await resp.text(); } catch {}
+      let errDetail = '';
+      try { const j = JSON.parse(errBody); errDetail = j.error || j.body || ''; } catch { errDetail = errBody.substring(0, 200); }
+      throw new Error(`HTTP ${resp.status}${errDetail ? ' — ' + errDetail : ''}. Make sure the Cloudflare Worker is deployed with the latest code.`);
+    }
     const json = await resp.json();
 
     // Parse response
@@ -424,8 +429,12 @@ async function fetchLineups() {
   } catch (err) {
     console.error(err);
     const banner = document.getElementById('errorBanner');
-    if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('CORS')) {
-      banner.innerHTML = `<strong>CORS Error:</strong> stats.nba.com blocks direct browser requests. Click ⚙️ Proxy Settings above and add a CORS proxy URL (e.g., a Cloudflare Worker). <a href="javascript:toggleProxy()" style="color:var(--accent)">Open proxy settings →</a>`;
+    if (err.name === 'AbortError') {
+      banner.innerHTML = `<strong>Timeout:</strong> The request took too long. NBA Stats may be slow — try again.`;
+    } else if (err.message.includes('520') || err.message.includes('502') || err.message.includes('Worker')) {
+      banner.innerHTML = `<strong>Proxy Error (${err.message.match(/\d{3}/)?.[0] || '?'}):</strong> The Cloudflare Worker may need updating. Go to <a href="https://dash.cloudflare.com" target="_blank" style="color:var(--accent)">Cloudflare Dashboard</a> → Workers → nba-lineup-proxy → Edit Code → paste the latest worker code → Deploy.`;
+    } else if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('CORS')) {
+      banner.innerHTML = `<strong>CORS Error:</strong> stats.nba.com blocks direct browser requests. Click <a href="javascript:toggleProxy()" style="color:var(--accent)">⚙️ Proxy Settings</a> and verify the proxy URL.`;
     } else {
       banner.textContent = `Error: ${err.message}`;
     }
