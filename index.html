@@ -207,19 +207,38 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
 
 <div class="header">
   <div class="logo">🏀 Lineup <span>Lab</span></div>
-  <div class="badge">v1.3</div>
+  <div class="badge">v1.4</div>
   <div class="sub">HoopsMatic · NBA Two-Man Lineup Analytics</div>
 </div>
 
-<div class="controls">
+<div class="controls" id="controlsBar">
   <div class="ctrl-group">
+    <label>Mode</label>
+    <select id="modeSelect" onchange="toggleMode()">
+      <option value="team">By Team</option>
+      <option value="player">By Player</option>
+    </select>
+  </div>
+  <!-- Team mode controls -->
+  <div class="ctrl-group team-ctrl">
     <label>Team</label>
     <select id="teamSelect"></select>
   </div>
-  <div class="ctrl-group">
+  <div class="ctrl-group team-ctrl">
     <label>Season</label>
     <select id="seasonSelect"></select>
   </div>
+  <!-- Player mode controls -->
+  <div class="ctrl-group player-ctrl" style="display:none">
+    <label>Player Name</label>
+    <input id="playerNameInput" placeholder="e.g. LeBron James" style="min-width:180px" onkeydown="if(event.key==='Enter')searchPlayer()">
+  </div>
+  <div class="ctrl-group player-ctrl" style="display:none">
+    <label>Seasons</label>
+    <select id="careerSeasonSelect" style="min-width:160px" multiple></select>
+  </div>
+  <button class="btn btn-outline player-ctrl" style="display:none;align-self:flex-end" onclick="searchPlayer()">🔍 Find</button>
+  <!-- Shared controls -->
   <div class="ctrl-group">
     <label>Lineup Size</label>
     <select id="groupSelect">
@@ -257,7 +276,7 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
       <option value="Playoffs">Playoffs</option>
     </select>
   </div>
-  <div class="ctrl-group">
+  <div class="ctrl-group team-ctrl">
     <label>Player Filter</label>
     <select id="playerSelect" style="min-width:160px" onchange="if(rawData)applyFilters()">
       <option value="">All Players</option>
@@ -349,15 +368,22 @@ const TEAMS = [
 
 let rawData = null;
 let sortCol = null, sortAsc = false;
-let selectedPlayers = new Set(); // active player chip filters
-let rosterCache = {}; // teamId_season → player list
+let selectedPlayers = new Set();
+let rosterCache = {};
+let currentPlayerInfo = null; // { id, name, seasons: [{season, teamId, teamAbbr}] }
+let isPlayerMode = false;
 
-// Init dropdowns
+function toggleMode() {
+  const mode = document.getElementById('modeSelect').value;
+  isPlayerMode = mode === 'player';
+  document.querySelectorAll('.team-ctrl').forEach(el => el.style.display = isPlayerMode ? 'none' : '');
+  document.querySelectorAll('.player-ctrl').forEach(el => el.style.display = isPlayerMode ? '' : 'none');
+}
+
 function init() {
   const teamSel = document.getElementById('teamSelect');
   teamSel.innerHTML = TEAMS.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
   teamSel.addEventListener('change', () => loadRoster());
-
   const seasonSel = document.getElementById('seasonSelect');
   const currentYear = new Date().getFullYear();
   let seasons = [];
@@ -367,9 +393,59 @@ function init() {
   }
   seasonSel.innerHTML = seasons.join('');
   seasonSel.addEventListener('change', () => loadRoster());
-
-  // Auto-load roster on init
   setTimeout(() => loadRoster(), 200);
+}
+
+async function searchPlayer() {
+  const name = (document.getElementById('playerNameInput').value || '').trim();
+  if (!name || name.length < 2) return;
+  const proxy = document.getElementById('proxyUrl').value.trim();
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('errorBanner').style.display = 'none';
+  document.querySelector('.loading-text').innerHTML = 'Searching for "' + name + '"...';
+  try {
+    const url1 = 'https://stats.nba.com/stats/commonallplayers?IsOnlyCurrentSeason=0&LeagueID=00&Season=2025-26';
+    const resp1 = await fetch(proxy ? proxy + encodeURIComponent(url1) : url1, { headers: {'Accept':'application/json'} });
+    if (!resp1.ok) throw new Error('Player search failed: HTTP ' + resp1.status);
+    const j1 = await resp1.json();
+    const ps = j1.resultSets[0];
+    const ni = ps.headers.indexOf('DISPLAY_FIRST_LAST'), ii = ps.headers.indexOf('PERSON_ID');
+    const sl = name.toLowerCase();
+    const matches = ps.rowSet.filter(r => (r[ni]||'').toLowerCase().includes(sl));
+    if (!matches.length) throw new Error('No player found matching "' + name + '"');
+    const exact = matches.find(r => (r[ni]||'').toLowerCase() === sl);
+    const best = exact || matches.sort((a,b) => (a[ni]||'').length - (b[ni]||'').length)[0];
+    const playerId = String(best[ii]), playerName = best[ni];
+    document.querySelector('.loading-text').innerHTML = 'Found ' + playerName + '. Loading career...';
+    const url2 = 'https://stats.nba.com/stats/playercareerstats?LeagueID=00&PerMode=Totals&PlayerID=' + playerId;
+    const resp2 = await fetch(proxy ? proxy + encodeURIComponent(url2) : url2, { headers: {'Accept':'application/json'} });
+    if (!resp2.ok) throw new Error('Career stats failed');
+    const j2 = await resp2.json();
+    const ss = j2.resultSets.find(rs => rs.name === 'SeasonTotalsRegularSeason');
+    if (!ss || !ss.rowSet.length) throw new Error('No career data');
+    const sh = ss.headers;
+    const si = sh.indexOf('SEASON_ID'), ti = sh.indexOf('TEAM_ID'), tai = sh.indexOf('TEAM_ABBREVIATION');
+    const careerSeasons = ss.rowSet.filter(r => parseInt((r[si]||'').split('-')[0]) >= 2007)
+      .map(r => ({ season: r[si], teamId: String(r[ti]), teamAbbr: r[tai] })).reverse();
+    if (!careerSeasons.length) throw new Error('No seasons with lineup data (2007-08+)');
+    currentPlayerInfo = { id: playerId, name: playerName, seasons: careerSeasons };
+    const csSel = document.getElementById('careerSeasonSelect');
+    csSel.innerHTML = careerSeasons.map((s,i) =>
+      '<option value="' + i + '" ' + (i < 3 ? 'selected' : '') + '>' + s.season + ' · ' + s.teamAbbr + '</option>'
+    ).join('');
+    csSel.size = Math.min(careerSeasons.length, 6);
+    document.getElementById('loading').style.display = 'none';
+    const banner = document.getElementById('errorBanner');
+    banner.style.display = 'block';
+    banner.style.cssText = 'display:block;background:rgba(34,197,94,.08);border-color:rgba(34,197,94,.2);color:var(--green);font-size:.7rem;padding:.75rem 2rem';
+    banner.textContent = '✓ Found ' + playerName + ' — ' + careerSeasons.length + ' seasons. Select seasons (Ctrl/Cmd+click) then click Fetch Lineups.';
+  } catch(err) {
+    document.getElementById('loading').style.display = 'none';
+    const banner = document.getElementById('errorBanner');
+    banner.style.cssText = '';
+    banner.textContent = 'Error: ' + err.message;
+    banner.style.display = 'block';
+  }
 }
 
 async function loadRoster() {
@@ -435,8 +511,6 @@ function toggleProxy() {
 }
 
 async function fetchLineups() {
-  const teamId = document.getElementById('teamSelect').value;
-  const season = document.getElementById('seasonSelect').value;
   const groupQty = document.getElementById('groupSelect').value;
   const measure = document.getElementById('measureSelect').value;
   const perMode = document.getElementById('perModeSelect').value;
@@ -449,52 +523,105 @@ async function fetchLineups() {
   document.getElementById('errorBanner').style.display = 'none';
   document.getElementById('fetchBtn').disabled = true;
 
-  const params = new URLSearchParams({
-    DateFrom: '', DateTo: '', GameID: '', GameSegment: '',
-    GroupQuantity: groupQty, LastNGames: 0, LeagueID: '00',
-    Location: '', MeasureType: measure, Month: 0,
-    OpponentTeamID: 0, Outcome: '', PORound: '',
-    PaceAdjust: 'N', PerMode: perMode, Period: 0,
-    PlusMinus: 'N', Rank: 'N', Season: season,
-    SeasonSegment: '', SeasonType: seasonType,
-    ShotClockRange: '', TeamID: teamId,
-    VsConference: '', VsDivision: ''
-  });
-
-  const baseUrl = `https://stats.nba.com/stats/teamdashlineups?${params}`;
-  const fetchUrl = proxy ? `${proxy}${encodeURIComponent(baseUrl)}` : baseUrl;
+  // Build list of {teamId, season, label} to fetch
+  let queries = [];
+  if (isPlayerMode && currentPlayerInfo) {
+    const sel = document.getElementById('careerSeasonSelect');
+    const selected = Array.from(sel.selectedOptions).map(o => parseInt(o.value));
+    if (!selected.length) { 
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('fetchBtn').disabled = false;
+      alert('Select at least one season'); return; 
+    }
+    queries = selected.map(i => {
+      const s = currentPlayerInfo.seasons[i];
+      return { teamId: s.teamId, season: s.season, label: s.season + ' ' + s.teamAbbr };
+    });
+  } else {
+    const teamId = document.getElementById('teamSelect').value;
+    const season = document.getElementById('seasonSelect').value;
+    queries = [{ teamId, season, label: season }];
+  }
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000);
-    const resp = await fetch(fetchUrl, {
-      signal: controller.signal,
-      headers: { 'Accept': 'application/json' }
-    });
-    clearTimeout(timeout);
-    if (!resp.ok) {
-      let errBody = '';
-      try { errBody = await resp.text(); } catch {}
-      let errDetail = '';
-      try { const j = JSON.parse(errBody); errDetail = j.error || j.body || ''; } catch { errDetail = errBody.substring(0, 200); }
-      throw new Error(`HTTP ${resp.status}${errDetail ? ' — ' + errDetail : ''}. Make sure the Cloudflare Worker is deployed with the latest code.`);
-    }
-    const json = await resp.json();
+    let allHeaders = null;
+    let allRows = [];
+    let seasonColIdx = -1;
 
-    // Parse response
-    const lineupSet = json.resultSets.find(rs => rs.name === 'Lineups');
-    if (!lineupSet || !lineupSet.rowSet.length) {
-      throw new Error('No lineup data returned. Try a different season or team.');
+    for (let qi = 0; qi < queries.length; qi++) {
+      const q = queries[qi];
+      document.querySelector('.loading-text').innerHTML = queries.length > 1
+        ? `Fetching ${q.label} (${qi+1}/${queries.length})...<br><span style="font-size:.6rem;opacity:.6">This can take 15-30 seconds per season</span>`
+        : `Fetching lineup data...<br><span style="font-size:.6rem;opacity:.6">This can take 15-30 seconds</span>`;
+
+      const params = new URLSearchParams({
+        DateFrom: '', DateTo: '', GameID: '', GameSegment: '',
+        GroupQuantity: groupQty, LastNGames: 0, LeagueID: '00',
+        Location: '', MeasureType: measure, Month: 0,
+        OpponentTeamID: 0, Outcome: '', PORound: '',
+        PaceAdjust: 'N', PerMode: perMode, Period: 0,
+        PlusMinus: 'N', Rank: 'N', Season: q.season,
+        SeasonSegment: '', SeasonType: seasonType,
+        ShotClockRange: '', TeamID: q.teamId,
+        VsConference: '', VsDivision: ''
+      });
+      const baseUrl = `https://stats.nba.com/stats/teamdashlineups?${params}`;
+      const fetchUrl = proxy ? `${proxy}${encodeURIComponent(baseUrl)}` : baseUrl;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 60000);
+      const resp = await fetch(fetchUrl, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
+      clearTimeout(timeout);
+      if (!resp.ok) {
+        let errBody = ''; try { errBody = await resp.text(); } catch {}
+        let errDetail = ''; try { const j = JSON.parse(errBody); errDetail = j.error || j.body || ''; } catch { errDetail = errBody.substring(0, 200); }
+        if (queries.length > 1) { console.warn(`Skipping ${q.label}: HTTP ${resp.status}`); continue; }
+        throw new Error(`HTTP ${resp.status}${errDetail ? ' — ' + errDetail : ''}`);
+      }
+      const json = await resp.json();
+      const lineupSet = json.resultSets.find(rs => rs.name === 'Lineups');
+      if (!lineupSet || !lineupSet.rowSet.length) {
+        if (queries.length > 1) { console.warn(`No data for ${q.label}`); continue; }
+        throw new Error('No lineup data returned.');
+      }
+
+      if (!allHeaders) {
+        allHeaders = [...lineupSet.headers];
+        if (queries.length > 1) {
+          allHeaders.push('SEASON_TEAM');
+          seasonColIdx = allHeaders.length - 1;
+        }
+      }
+      for (const row of lineupSet.rowSet) {
+        const newRow = [...row];
+        if (queries.length > 1) newRow.push(q.label);
+        // In player mode, filter to only lineups containing the player
+        if (isPlayerMode && currentPlayerInfo) {
+          const nameVal = newRow[allHeaders.indexOf('GROUP_NAME')] || '';
+          if (!nameVal.includes(currentPlayerInfo.name.split(' ').pop())) continue;
+        }
+        allRows.push(newRow);
+      }
+
+      // Rate limit: wait 600ms between requests
+      if (qi < queries.length - 1) await new Promise(r => setTimeout(r, 600));
     }
 
+    if (!allRows.length) throw new Error('No lineup data found for the selected seasons.');
+
+    const teamId = queries[0].teamId;
     rawData = {
-      headers: lineupSet.headers,
-      rows: lineupSet.rowSet,
-      team: TEAMS.find(t => t.id === teamId),
-      season, groupQty, measure, perMode, seasonType
+      headers: allHeaders,
+      rows: allRows,
+      team: isPlayerMode ? { name: currentPlayerInfo.name, abbr: '' } : TEAMS.find(t => t.id === teamId),
+      season: queries.length > 1 ? queries.map(q => q.label).join(', ') : queries[0].season,
+      groupQty, measure, perMode, seasonType,
+      isMultiSeason: queries.length > 1,
+      seasonColIdx
     };
 
     renderResults();
+
   } catch (err) {
     console.error(err);
     const banner = document.getElementById('errorBanner');
@@ -539,11 +666,16 @@ function renderResults() {
   else showCols = BASE_COLS;
 
   // Filter to columns that actually exist in data
-  const cols = showCols.filter(c => colMap[c] !== undefined);
+  let cols = showCols.filter(c => colMap[c] !== undefined);
+  // In multi-season mode, add SEASON_TEAM after GROUP_NAME
+  if (rawData.isMultiSeason && colMap['SEASON_TEAM'] !== undefined) {
+    const namePos = cols.indexOf('GROUP_NAME');
+    cols.splice(namePos + 1, 0, 'SEASON_TEAM');
+  }
 
   // Column display names
   const LABELS = {
-    GROUP_NAME: 'Lineup', GP: 'GP', W: 'W', L: 'L', W_PCT: 'W%', MIN: 'MIN',
+    GROUP_NAME: 'Lineup', GP: 'GP', W: 'W', L: 'L', W_PCT: 'W%', MIN: 'MIN', SEASON_TEAM: 'Season',
     OFF_RATING: 'ORTG', DEF_RATING: 'DRTG', NET_RATING: 'NET', AST_PCT: 'AST%',
     AST_TO: 'AST/TO', AST_RATIO: 'AST Ratio', OREB_PCT: 'OREB%', DREB_PCT: 'DREB%',
     REB_PCT: 'REB%', EFG_PCT: 'eFG%', TS_PCT: 'TS%', PACE: 'PACE', PIE: 'PIE',
@@ -687,9 +819,10 @@ function applyFilters() {
     for (const c of cols) {
       const val = row[colMap[c]];
       if (c === 'GROUP_NAME') {
-        // Format lineup names nicely
         const names = (val || '').split(' - ');
         html += `<td class="lineup-name">${names.join(' · ')}</td>`;
+      } else if (c === 'SEASON_TEAM') {
+        html += `<td><span class="team-badge">${val || '—'}</span></td>`;
       } else if (PCT_COLS.has(c)) {
         const pct = val != null ? (val * 100).toFixed(1) : '—';
         html += `<td class="num">${pct}%</td>`;
