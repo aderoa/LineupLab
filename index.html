@@ -207,7 +207,7 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
 
 <div class="header">
   <div class="logo">🏀 Lineup <span>Lab</span></div>
-  <div class="badge">v1.5</div>
+  <div class="badge">v1.7</div>
   <div class="sub">HoopsMatic · NBA Two-Man Lineup Analytics</div>
 </div>
 
@@ -424,6 +424,9 @@ function aggregateRows(headers, rows) {
   // New headers: remove SEASON_TEAM, add SEASONS
   const newHeaders = headers.filter(h => h !== 'SEASON_TEAM');
   newHeaders.push('SEASONS');
+  newHeaders.push('PM_PER_MIN');
+  newHeaders.push('PM_PER_36');
+  newHeaders.push('PM_PER_GP');
   const newColMap = {};
   newHeaders.forEach((h, i) => newColMap[h] = i);
 
@@ -454,6 +457,14 @@ function aggregateRows(headers, rows) {
         newRow[newColMap[pctCol]] = den > 0 ? num / den : 0;
       }
     }
+
+    // Calculate +/- per minute, per 36, per GP
+    const pm = newRow[newColMap['PLUS_MINUS']] || 0;
+    const min = newRow[newColMap['MIN']] || 0;
+    const gp = newRow[newColMap['GP']] || 0;
+    newRow[newColMap['PM_PER_MIN']] = min > 0 ? pm / min : 0;
+    newRow[newColMap['PM_PER_36']] = min > 0 ? (pm / min) * 36 : 0;
+    newRow[newColMap['PM_PER_GP']] = gp > 0 ? pm / gp : 0;
 
     aggRows.push(newRow);
   }
@@ -764,10 +775,20 @@ function renderResults() {
       cols.splice(namePos + 1, 0, seasonCol);
     }
   }
+  // In aggregate mode, add +/- derived columns after PLUS_MINUS
+  if (shouldAggregate) {
+    for (const extra of ['PM_PER_GP','PM_PER_36','PM_PER_MIN']) {
+      if (colMap[extra] !== undefined) {
+        const pmPos = cols.indexOf('PLUS_MINUS');
+        if (pmPos >= 0) cols.splice(pmPos + 1, 0, extra);
+        else cols.push(extra);
+      }
+    }
+  }
 
   // Column display names
   const LABELS = {
-    GROUP_NAME: 'Lineup', GP: 'GP', W: 'W', L: 'L', W_PCT: 'W%', MIN: 'MIN', SEASON_TEAM: 'Season', SEASONS: 'Seasons',
+    GROUP_NAME: 'Lineup', GP: 'GP', W: 'W', L: 'L', W_PCT: 'W%', MIN: 'MIN', SEASON_TEAM: 'Season', SEASONS: 'Seasons', PM_PER_MIN: '+/- per MIN', PM_PER_36: '+/- per 36', PM_PER_GP: '+/- per GP',
     OFF_RATING: 'ORTG', DEF_RATING: 'DRTG', NET_RATING: 'NET', AST_PCT: 'AST%',
     AST_TO: 'AST/TO', AST_RATIO: 'AST Ratio', OREB_PCT: 'OREB%', DREB_PCT: 'DREB%',
     REB_PCT: 'REB%', EFG_PCT: 'eFG%', TS_PCT: 'TS%', PACE: 'PACE', PIE: 'PIE',
@@ -788,7 +809,7 @@ function renderResults() {
   const PCT_COLS = new Set(['W_PCT','FG_PCT','FG3_PCT','FT_PCT','EFG_PCT','TS_PCT','AST_PCT','OREB_PCT','DREB_PCT','REB_PCT','PIE',
     'OPP_EFG_PCT','OPP_FTA_RATE','OPP_TOV_PCT','OPP_OREB_PCT','FTA_RATE','TM_TOV_PCT',
     'PCT_FGA_2PT','PCT_FGA_3PT','PCT_PTS_2PT','PCT_PTS_2PT_MR','PCT_PTS_3PT','PCT_PTS_FB','PCT_PTS_FT','PCT_PTS_OFF_TOV','PCT_PTS_PAINT','PCT_AST_2PM','PCT_AST_3PM','PCT_AST_FGM']);
-  const PLUS_MINUS_COLS = new Set(['PLUS_MINUS','NET_RATING']);
+  const PLUS_MINUS_COLS = new Set(['PLUS_MINUS','NET_RATING','PM_PER_MIN','PM_PER_36','PM_PER_GP']);
 
   // Store for filtering/sorting
   rawData._cols = cols;
@@ -924,9 +945,11 @@ function applyFilters() {
         const pct = val != null ? (val * 100).toFixed(1) : '—';
         html += `<td class="num">${pct}%</td>`;
       } else if (PLUS_MINUS_COLS.has(c)) {
-        const v = val != null ? val.toFixed(1) : '—';
+        const decimals = c === 'PM_PER_MIN' ? 3 : 1;
+        const v = val != null ? val.toFixed(decimals) : '—';
         const cls = val > 0 ? 'pos' : val < 0 ? 'neg' : 'neutral';
-        html += `<td class="num ${cls}">${val > 0 ? '+' : ''}${v}</td>`;
+        const prefix = val != null && val > 0 ? '+' : '';
+        html += `<td class="num ${cls}">${prefix}${v}</td>`;
       } else if (typeof val === 'number') {
         html += `<td class="num">${Number.isInteger(val) ? val : val.toFixed(1)}</td>`;
       } else {
