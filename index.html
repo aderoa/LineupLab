@@ -207,7 +207,7 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
 
 <div class="header">
   <div class="logo">🏀 Lineup <span>Lab</span></div>
-  <div class="badge">v1.7</div>
+  <div class="badge">v1.8</div>
   <div class="sub">HoopsMatic · NBA Two-Man Lineup Analytics</div>
 </div>
 
@@ -296,7 +296,7 @@ tbody tr:hover { background: rgba(59,130,246,.04); }
   <input id="proxyUrl" placeholder="https://your-proxy.workers.dev/?url=" value="https://nba-lineup-proxy.thejorgesierra.workers.dev/?url=">
   <span class="proxy-toggle" onclick="toggleProxy()">✕ Close</span>
 </div>
-<div style="padding:.25rem 2rem;font-size:.55rem;color:var(--muted);display:flex;gap:.5rem;align-items:center">
+<div style="padding:.25rem 2rem;font-size:.55rem;color:var(--muted);display:none" id="proxyInfo">
   <span>Data from stats.nba.com</span>
   <span>·</span>
   <span class="proxy-toggle" onclick="toggleProxy()">⚙️ Proxy Settings</span>
@@ -767,15 +767,14 @@ function renderResults() {
 
   // Filter to columns that actually exist in data
   let cols = showCols.filter(c => colMap[c] !== undefined);
-  // In multi-season mode, add season column after GROUP_NAME
-  if (rawData.isMultiSeason) {
-    const seasonCol = shouldAggregate ? 'SEASONS' : 'SEASON_TEAM';
-    if (colMap[seasonCol] !== undefined) {
+  // In multi-season non-aggregated mode, add season column after GROUP_NAME
+  if (rawData.isMultiSeason && !shouldAggregate) {
+    if (colMap['SEASON_TEAM'] !== undefined) {
       const namePos = cols.indexOf('GROUP_NAME');
-      cols.splice(namePos + 1, 0, seasonCol);
+      cols.splice(namePos + 1, 0, 'SEASON_TEAM');
     }
   }
-  // In aggregate mode, add +/- derived columns after PLUS_MINUS
+  // In aggregate mode, add Total Seasons at end and +/- derived columns after PLUS_MINUS
   if (shouldAggregate) {
     for (const extra of ['PM_PER_GP','PM_PER_36','PM_PER_MIN']) {
       if (colMap[extra] !== undefined) {
@@ -784,11 +783,12 @@ function renderResults() {
         else cols.push(extra);
       }
     }
+    if (colMap['SEASONS'] !== undefined) cols.push('SEASONS');
   }
 
   // Column display names
   const LABELS = {
-    GROUP_NAME: 'Lineup', GP: 'GP', W: 'W', L: 'L', W_PCT: 'W%', MIN: 'MIN', SEASON_TEAM: 'Season', SEASONS: 'Seasons', PM_PER_MIN: '+/- per MIN', PM_PER_36: '+/- per 36', PM_PER_GP: '+/- per GP',
+    GROUP_NAME: 'Lineup', GP: 'GP', W: 'W', L: 'L', W_PCT: 'W%', MIN: 'MIN', SEASON_TEAM: 'Season', SEASONS: 'Total Seasons', PM_PER_MIN: '+/- per MIN', PM_PER_36: '+/- per 36', PM_PER_GP: '+/- per GP',
     OFF_RATING: 'ORTG', DEF_RATING: 'DRTG', NET_RATING: 'NET', AST_PCT: 'AST%',
     AST_TO: 'AST/TO', AST_RATIO: 'AST Ratio', OREB_PCT: 'OREB%', DREB_PCT: 'DREB%',
     REB_PCT: 'REB%', EFG_PCT: 'eFG%', TS_PCT: 'TS%', PACE: 'PACE', PIE: 'PIE',
@@ -825,8 +825,16 @@ function renderResults() {
   const totalLineups = rows.length;
   const statsBar = document.getElementById('statsBar');
   const aggLabel = shouldAggregate ? ' · Aggregated' : '';
+  // Clean season label for multi-season
+  let seasonLabel = season;
+  if (rawData.isMultiSeason) {
+    const parts = season.split(', ');
+    const first = parts[parts.length - 1].split(' ')[0]; // oldest
+    const last = parts[0].split(' ')[0]; // newest
+    seasonLabel = `${parts.length} seasons (${first} to ${last})`;
+  }
   statsBar.innerHTML = `
-    <div class="stat-card"><span class="sv">${team.name}</span><span class="sl">${season} · ${groupQty}-Man · ${measure}${aggLabel}</span></div>
+    <div class="stat-card"><span class="sv">${team.name}</span><span class="sl">${seasonLabel} · ${groupQty}-Man · ${measure}${aggLabel}</span></div>
     <div class="stat-card"><span class="sv">${totalLineups}</span><span class="sl">${shouldAggregate ? 'Unique Lineups' : 'Total Lineups'}</span></div>
   `;
 
@@ -848,16 +856,8 @@ function renderResults() {
   // Sort by total minutes
   const sortedPlayers = Object.entries(playerMinutes).sort((a, b) => b[1] - a[1]);
 
-  // Render chips
-  const chipsEl = document.getElementById('playerChips');
-  let chipHtml = '<span class="chip-label">Players:</span>';
-  for (const [name, min] of sortedPlayers) {
-    const minLabel = min >= 1000 ? `${(min/60).toFixed(0)}h` : `${Math.round(min)}m`;
-    chipHtml += `<span class="player-chip" data-player="${name}" onclick="togglePlayerChip(this)">${name}<span class="chip-min">${minLabel}</span></span>`;
-  }
-  chipHtml += `<span class="player-chip" style="background:none;border-style:dashed;color:var(--muted)" onclick="clearPlayerChips()">Clear all</span>`;
-  chipsEl.innerHTML = chipHtml;
-  chipsEl.style.display = 'flex';
+  // Player chips disabled for cleaner UI
+  document.getElementById('playerChips').style.display = 'none';
 
   document.getElementById('resultsPanel').style.display = 'block';
   document.getElementById('emptyState').style.display = 'none';
@@ -939,8 +939,8 @@ function applyFilters() {
       } else if (c === 'SEASON_TEAM') {
         html += `<td><span class="team-badge">${val || '—'}</span></td>`;
       } else if (c === 'SEASONS') {
-        const seasons = (val || '').split(', ');
-        html += `<td style="font-size:.55rem;max-width:150px;white-space:normal;line-height:1.4">${seasons.map(s => '<span class="team-badge">' + s + '</span>').join(' ')}</td>`;
+        const seasons = (val || '').split(', ').filter(Boolean);
+        html += `<td class="num">${seasons.length}</td>`;
       } else if (PCT_COLS.has(c)) {
         const pct = val != null ? (val * 100).toFixed(1) : '—';
         html += `<td class="num">${pct}%</td>`;
